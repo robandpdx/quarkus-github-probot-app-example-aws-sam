@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Quarkus GitHub App that comments "Hello word!" on newly opened issues,
+  running on AWS Lambda behind an API Gateway HTTP API.
+
+Parameters:
+  GitHubAppId:
+    Type: String
+    Description: The App ID of the GitHub App (shown on the GitHub App settings page).
+    AllowedPattern: '^[0-9]+$'
+  GitHubAppWebhookSecret:
+    Type: String
+    NoEcho: true
+    Description: The webhook secret configured on the GitHub App.
+    MinLength: 1
+  GitHubAppPrivateKey:
+    Type: String
+    NoEcho: true
+    Description: >
+      The PEM encoded private key of the GitHub App. Line breaks may be replaced
+      by spaces, e.g. "$(tr '\n' ' ' < app.private-key.pem)".
+    MinLength: 1
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1024
+
+Resources:
+  GitHubAppFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest
+      Runtime: java25
+      Architectures:
+        - x86_64
+      CodeUri: target/function.zip
+      Policies: AWSLambdaBasicExecutionRole
+      SnapStart:
+        ApplyOn: PublishedVersions
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          QUARKUS_GITHUB_APP_APP_ID: !Ref GitHubAppId
+          QUARKUS_GITHUB_APP_WEBHOOK_SECRET: !Ref GitHubAppWebhookSecret
+          QUARKUS_GITHUB_APP_PRIVATE_KEY: !Ref GitHubAppPrivateKey
+      Events:
+        Webhook:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: POST
+
+Outputs:
+  WebhookUrl:
+    Description: Webhook URL to set in the GitHub App configuration
+    Value: !Sub 'https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/'
+  GitHubAppFunctionArn:
+    Description: ARN of the Lambda function
+    Value: !GetAtt GitHubAppFunction.Arn
