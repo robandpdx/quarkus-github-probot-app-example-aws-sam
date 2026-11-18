@@ -1,0 +1,39 @@
+{
+    "name": "Quarkus GitHub App (AWS SAM)",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+        "ghcr.io/devcontainers/features/java:1": {
+            "version": "25",
+            "jdkDistro": "amzn",
+            "installMaven": false
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "lts"
+        },
+        "ghcr.io/devcontainers/features/aws-cli:1": {},
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+        "ghcr.io/devcontainers/features/python:1": {
+            "version": "3.12"
+        }
+    },
+    "forwardPorts": [8080, 5005],
+    "portsAttributes": {
+        "8080": {
+            "label": "Quarkus HTTP"
+        },
+        "5005": {
+            "label": "Java debugger"
+        }
+    },
+    "postCreateCommand": "bash .devcontainer/post-create.sh",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "vscjava.vscode-java-pack",
+                "redhat.vscode-quarkus",
+                "amazonwebservices.aws-toolkit-vscode",
+                "mkhl.direnv"
+            ]
+        }
+    }
+}

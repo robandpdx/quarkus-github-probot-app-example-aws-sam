@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Debug GitHub App (Quarkus dev mode)",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5005,
+            "preLaunchTask": "quarkus:dev"
+        },
+        {
+            "type": "java",
+            "name": "Debug Unit Tests",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5005,
+            "preLaunchTask": "mvn test (debug)"
+        }
+    ]
+}

@@ -1,0 +1,16 @@
+# Copy this file to .envrc and fill in the values for your GitHub App.
+# If you use direnv (https://direnv.net), run `direnv allow` afterwards;
+# otherwise load it manually with `source .envrc`.
+# .envrc is git-ignored: never commit your secrets.
+
+# The App ID shown on the GitHub App settings page.
+export QUARKUS_GITHUB_APP_APP_ID=123456
+
+# The webhook secret configured on the GitHub App.
+export QUARKUS_GITHUB_APP_WEBHOOK_SECRET=change-me
+
+# The private key generated for the GitHub App (PEM format).
+export QUARKUS_GITHUB_APP_PRIVATE_KEY="$(cat ./app.private-key.pem)"
+
+# The smee.io channel URL used to forward GitHub webhooks to your machine (dev mode only).
+export QUARKUS_GITHUB_APP_WEBHOOK_PROXY_URL=https://smee.io/your-channel-id
