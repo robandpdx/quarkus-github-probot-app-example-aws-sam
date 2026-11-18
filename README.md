@@ -11,6 +11,12 @@ deployed as an AWS Lambda function behind an API Gateway HTTP API using the
 It runs on [Amazon Corretto](https://aws.amazon.com/corretto/) 25, the latest LTS release of Java (Lambda `java25`
 runtime).
 
+The issue listener uses a synchronous CDI observer (`@Observes GitHubEvent`) rather than `@Issue.Opened`, whose
+dispatch runs asynchronously in production. This keeps the Lambda invocation active until the comment is posted:
+the webhook receives HTTP 200 only after processing finishes, or HTTP 500 if commenting fails. Detached background
+work can be frozen when Lambda returns its response. The extension still verifies webhook signatures and provides
+the authenticated installation client.
+
 ## Project layout
 
 | Path | Description |
@@ -130,7 +136,8 @@ sam deploy --guided
 ```
 
 When prompted for `GitHubAppPrivateKey`, paste the private key on a single line (line breaks can be replaced by
-spaces). Alternatively pass all the parameters on the command line:
+spaces), including the `-----BEGIN RSA PRIVATE KEY-----` and `-----END RSA PRIVATE KEY-----` markers.
+Alternatively pass all the parameters on the command line:
 
 ```shell
 sam deploy \
@@ -140,8 +147,11 @@ sam deploy \
   --parameter-overrides \
     GitHubAppId="$QUARKUS_GITHUB_APP_APP_ID" \
     GitHubAppWebhookSecret="$QUARKUS_GITHUB_APP_WEBHOOK_SECRET" \
-    GitHubAppPrivateKey="$(tr '\n' ' ' < app.private-key.pem)"
+    GitHubAppPrivateKey="\"$(tr '\n' ' ' < app.private-key.pem)\""
 ```
+
+Keep the escaped inner quotes around the private key: SAM's parameter parser needs them to preserve spaces
+inside the PEM header and body. Shell quoting alone causes SAM to truncate the value to `-----BEGIN`.
 
 Once deployed, SAM prints the stack outputs. Copy the `WebhookUrl` output and set it as the **Webhook URL** of your
 GitHub App (**Settings** > **Developer settings** > **GitHub Apps** > your app > **General**). The outputs can also be
@@ -166,6 +176,15 @@ To redeploy after a change, run `./mvnw clean package` and then `sam deploy` (th
 The parameters are exposed to the function as the `QUARKUS_GITHUB_APP_*` environment variables described above.
 In production the webhook payload signatures are verified with the webhook secret. The function uses
 [Lambda SnapStart](https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html) to reduce cold starts.
+
+The template sets `JAVA_TOOL_OPTIONS` to open the Java modules required by Quarkus. The managed Lambda runtime
+does not launch the application with `java -jar`, so the deployment archive's `Add-Opens` manifest entry does not
+take effect. In particular, Java 25 requires `java.base/java.lang` to be opened for JBoss Threads; without it,
+initialization fails and the SnapStart version cannot stabilize.
+
+If an initial deployment ends in `ROLLBACK_COMPLETE`, fix the startup error and delete the failed stack before
+deploying it again; CloudFormation cannot update a stack in that state. Inspect the Lambda's CloudWatch log
+stream for the underlying initialization error.
 
 ### Stack outputs
 

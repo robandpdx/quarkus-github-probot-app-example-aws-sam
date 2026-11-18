@@ -13,14 +13,12 @@ Parameters:
     Type: String
     NoEcho: true
     Description: The webhook secret configured on the GitHub App.
-    MinLength: 1
   GitHubAppPrivateKey:
     Type: String
     NoEcho: true
     Description: >
       The PEM encoded private key of the GitHub App. Line breaks may be replaced
       by spaces, e.g. "$(tr '\n' ' ' < app.private-key.pem)".
-    MinLength: 1
 
 Globals:
   Function:
@@ -42,6 +40,10 @@ Resources:
       AutoPublishAlias: live
       Environment:
         Variables:
+          JAVA_TOOL_OPTIONS: >-
+            --add-opens=java.base/java.lang=ALL-UNNAMED
+            --add-opens=java.base/java.nio=ALL-UNNAMED
+            --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED
           QUARKUS_GITHUB_APP_APP_ID: !Ref GitHubAppId
           QUARKUS_GITHUB_APP_WEBHOOK_SECRET: !Ref GitHubAppWebhookSecret
           QUARKUS_GITHUB_APP_PRIVATE_KEY: !Ref GitHubAppPrivateKey
