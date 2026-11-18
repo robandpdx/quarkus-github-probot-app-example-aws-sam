@@ -1,6 +1,6 @@
 # quarkus-github-probot-app-example-aws-sam
 
-A [GitHub App](https://docs.github.com/en/apps) built with the
+A sample [GitHub App](https://docs.github.com/en/apps) built with the
 [Quarkus GitHub App](https://github.com/quarkiverse/quarkus-github-app) extension that listens for newly
 opened issues and leaves a `Hello word!` comment on them.
 
