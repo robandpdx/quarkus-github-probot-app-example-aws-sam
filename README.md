@@ -151,7 +151,8 @@ displayed with:
 sam list stack-outputs --stack-name hello-github-app
 ```
 
-To redeploy after a change, run `./mvnw clean package && sam deploy`. To delete the stack, run
+To redeploy after a change, run `./mvnw clean package` and then `sam deploy` (this short form relies on the
+`samconfig.toml` written by `sam deploy --guided`; if you deployed with the command-line form, repeat the full command). To delete the stack, run
 `sam delete --stack-name hello-github-app`.
 
 ### Deployment parameters
