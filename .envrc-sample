@@ -12,5 +12,8 @@ export QUARKUS_GITHUB_APP_WEBHOOK_SECRET=change-me
 # The private key generated for the GitHub App (PEM format).
 export QUARKUS_GITHUB_APP_PRIVATE_KEY="$(cat ./app.private-key.pem)"
 
+# Optional fallback for values not configured above. Uses your normal AWS credentials and region.
+# export GITHUB_APP_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:github-app-AbCdEf
+
 # The smee.io channel URL used to forward GitHub webhooks to your machine (dev mode only).
 export QUARKUS_GITHUB_APP_WEBHOOK_PROXY_URL=https://smee.io/your-channel-id

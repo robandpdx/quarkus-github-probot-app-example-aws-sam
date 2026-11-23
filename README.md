@@ -23,6 +23,7 @@ the authenticated installation client.
 | --- | --- |
 | `src/main/java/com/example/HelloIssue.java` | Listener for `issues.opened` events that comments `Hello word!` |
 | `src/test/java/com/example/HelloIssueTest.java` | Unit tests, using `quarkus-github-app-testing` to mock GitHub |
+| `src/main/java/com/example/GitHubAppSecretsConfigSourceFactory.java` | Loads missing GitHub App configuration from Secrets Manager at runtime |
 | `template.yaml` | AWS SAM template (Lambda function + HTTP API), outputs the webhook URL |
 | `.envrc-sample` | Sample environment variables for running locally |
 | `.vscode/` | VS Code launch configurations to debug the app and the unit tests |
@@ -65,13 +66,15 @@ All of these are pre-installed in the [dev container](#dev-container).
 
 ## Environment variables (local run)
 
-The app is configured through the following environment variables:
+Environment variables take precedence, so local development does not need AWS credentials or access to Secrets
+Manager when all three GitHub App values are set:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `QUARKUS_GITHUB_APP_APP_ID` | yes | The App ID of the GitHub App |
-| `QUARKUS_GITHUB_APP_WEBHOOK_SECRET` | yes | The webhook secret configured on the GitHub App |
-| `QUARKUS_GITHUB_APP_PRIVATE_KEY` | yes | The content of the private key (PEM) of the GitHub App |
+| `QUARKUS_GITHUB_APP_APP_ID` | unless supplied by Secrets Manager | The App ID of the GitHub App |
+| `QUARKUS_GITHUB_APP_WEBHOOK_SECRET` | unless supplied by Secrets Manager | The webhook secret configured on the GitHub App |
+| `QUARKUS_GITHUB_APP_PRIVATE_KEY` | unless supplied by Secrets Manager | The content of the private key (PEM) of the GitHub App |
+| `GITHUB_APP_SECRET_ARN` | only for Secrets Manager fallback | ARN of the existing JSON secret described below |
 | `QUARKUS_GITHUB_APP_WEBHOOK_PROXY_URL` | dev mode only | The smee.io channel URL to receive the webhook payloads from |
 
 Copy the sample file and fill in your values:
@@ -83,6 +86,14 @@ direnv allow        # or: source .envrc
 ```
 
 `.envrc` is git-ignored, never commit it.
+
+If `GITHUB_APP_SECRET_ARN` is set and any GitHub App values are missing, the app retrieves the secret once during
+runtime configuration initialization and uses it for the missing values only. Unset variables you want to obtain
+from Secrets Manager rather than setting them to empty strings. Standard Quarkus configuration, such as system
+properties, is also honored. AWS is not contacted when all three values are already configured, even if an ARN is set.
+For local fallback, configure your AWS credentials and region using the usual AWS SDK credential and region chains
+(for example, an AWS profile and `AWS_REGION`). Lambda uses its execution role and region automatically.
+An unreadable, malformed, or incomplete secret fails startup rather than silently using empty credentials.
 
 ## Run the application locally
 
@@ -128,16 +139,48 @@ Build the Lambda deployment package (`target/function.zip`):
 ./mvnw clean package
 ```
 
-Deploy the stack with SAM. The first time, use the guided mode which prompts for the parameters and saves your
-answers to `samconfig.toml` (git-ignored):
+### Prepare the secret separately
+
+Create and manage a Secrets Manager secret independently of this stack, in the same AWS account and region as the
+Lambda. Store a JSON `SecretString` with these string fields:
+
+```json
+{
+  "APP_ID": "123456",
+  "WEBHOOK_SECRET": "your-webhook-secret",
+  "PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+}
+```
+
+These JSON field names are case-sensitive, and all values must be non-blank strings (`APP_ID` must be quoted).
+The local `QUARKUS_GITHUB_APP_*` environment variable names are unchanged.
+
+In the Secrets Manager console's key/value editor, enter the PEM with its actual line breaks. In JSON, encode those
+line breaks as `\n`. Alternatively, `PRIVATE_KEY` can contain standard base64 encoding of the **entire PEM file**,
+including its header and footer. Whitespace and line breaks in that base64 value are accepted. The app decodes it
+once before passing the PEM to the GitHub App extension; plain PEM values are preserved. The decoded key must be
+an unencrypted RSA private key with a `-----BEGIN RSA PRIVATE KEY-----` or `-----BEGIN PRIVATE KEY-----` header.
+Malformed base64 or decoded data without a supported private-key header fails startup without exposing the key.
+This decoding applies only to Secrets Manager's `PRIVATE_KEY`; local environment variables still expect plain PEM.
+
+Copy the secret's full ARN, including its generated suffix.
+The stack neither creates nor updates nor deletes this secret.
+
+The template grants the function only `secretsmanager:GetSecretValue` on the supplied ARN. It works with the default
+AWS-managed `aws/secretsmanager` encryption key. If you use a customer-managed KMS key, also grant `kms:Decrypt` on
+that key to the function's execution role and allow the role in the key policy.
+
+### Deploy with the secret ARN
+
+Deploy the stack with SAM. The first time, use guided mode, which prompts for `GitHubAppSecretArn` and the
+non-secret `GitHubAppSecretsRevision` (default `1`), not the secret values, and saves deployment settings to
+`samconfig.toml` (git-ignored):
 
 ```shell
 sam deploy --guided
 ```
 
-When prompted for `GitHubAppPrivateKey`, paste the private key on a single line (line breaks can be replaced by
-spaces), including the `-----BEGIN RSA PRIVATE KEY-----` and `-----END RSA PRIVATE KEY-----` markers.
-Alternatively pass all the parameters on the command line:
+Alternatively, pass the ARN and non-secret revision on the command line:
 
 ```shell
 sam deploy \
@@ -145,13 +188,13 @@ sam deploy \
   --resolve-s3 \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
-    GitHubAppId="$QUARKUS_GITHUB_APP_APP_ID" \
-    GitHubAppWebhookSecret="$QUARKUS_GITHUB_APP_WEBHOOK_SECRET" \
-    GitHubAppPrivateKey="\"$(tr '\n' ' ' < app.private-key.pem)\""
+    GitHubAppSecretArn=arn:aws:secretsmanager:us-east-1:123456789012:secret:github-app-AbCdEf \
+    GitHubAppSecretsRevision=1
 ```
 
-Keep the escaped inner quotes around the private key: SAM's parameter parser needs them to preserve spaces
-inside the PEM header and body. Shell quoting alone causes SAM to truncate the value to `-----BEGIN`.
+No GitHub App credentials are passed as deployment parameters or stored in the Lambda environment.
+If upgrading an existing deployment, remove the old `GitHubAppId`, `GitHubAppWebhookSecret`, and
+`GitHubAppPrivateKey` parameter overrides from your local `samconfig.toml` and replace them with `GitHubAppSecretArn`.
 
 Once deployed, SAM prints the stack outputs. Copy the `WebhookUrl` output and set it as the **Webhook URL** of your
 GitHub App (**Settings** > **Developer settings** > **GitHub Apps** > your app > **General**). The outputs can also be
@@ -169,13 +212,25 @@ To redeploy after a change, run `./mvnw clean package` and then `sam deploy` (th
 
 | Parameter | Description |
 | --- | --- |
-| `GitHubAppId` | The App ID of the GitHub App |
-| `GitHubAppWebhookSecret` | The webhook secret configured on the GitHub App (`NoEcho`) |
-| `GitHubAppPrivateKey` | The private key (PEM) of the GitHub App, line breaks may be replaced by spaces (`NoEcho`) |
+| `GitHubAppSecretArn` | Full ARN of an existing Secrets Manager JSON secret containing `APP_ID`, `WEBHOOK_SECRET`, and `PRIVATE_KEY` |
+| `GitHubAppSecretsRevision` | Non-secret revision, default `1`; change it to publish a fresh Lambda version after rotating secrets |
 
-The parameters are exposed to the function as the `QUARKUS_GITHUB_APP_*` environment variables described above.
+The ARN and non-secret revision are exposed as `GITHUB_APP_SECRET_ARN` and `GITHUB_APP_SECRETS_REVISION`;
+secret values are fetched at runtime. The application does not read the revision: changing the environment
+configuration triggers version publishing.
 In production the webhook payload signatures are verified with the webhook secret. The function uses
 [Lambda SnapStart](https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html) to reduce cold starts.
+
+Secret values are cached for the initialized application, including in its SnapStart snapshot. After rotating the
+secret, change `GitHubAppSecretsRevision` to a new value (for example, from `1` to `2`) in your saved
+`samconfig.toml` parameter overrides and run `sam deploy`. No application rebuild is needed for a revision-only
+deployment. SAM publishes a fresh Lambda version and SnapStart snapshot and moves the `live` alias to it.
+If passing `--parameter-overrides` on the command line instead, include both the ARN and the new revision, since
+command-line overrides replace the saved overrides.
+
+The template declares `AWS::LanguageExtensions` before `AWS::Serverless-2016-10-31` so parameter references are
+resolved before SAM calculates the published version. Updating the external secret alone, or redeploying with
+an unchanged revision and artifact, does not refresh existing snapshots.
 
 The template sets `JAVA_TOOL_OPTIONS` to open the Java modules required by Quarkus. The managed Lambda runtime
 does not launch the application with `java -jar`, so the deployment archive's `Add-Opens` manifest entry does not

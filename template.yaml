@@ -1,24 +1,25 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
+Transform:
+  - AWS::LanguageExtensions
+  - AWS::Serverless-2016-10-31
 Description: >
   Quarkus GitHub App that comments "Hello word!" on newly opened issues,
   running on AWS Lambda behind an API Gateway HTTP API.
 
 Parameters:
-  GitHubAppId:
+  GitHubAppSecretArn:
     Type: String
-    Description: The App ID of the GitHub App (shown on the GitHub App settings page).
-    AllowedPattern: '^[0-9]+$'
-  GitHubAppWebhookSecret:
-    Type: String
-    NoEcho: true
-    Description: The webhook secret configured on the GitHub App.
-  GitHubAppPrivateKey:
-    Type: String
-    NoEcho: true
     Description: >
-      The PEM encoded private key of the GitHub App. Line breaks may be replaced
-      by spaces, e.g. "$(tr '\n' ' ' < app.private-key.pem)".
+      ARN of an existing Secrets Manager secret in the stack's region, containing
+      the JSON string fields APP_ID, WEBHOOK_SECRET, and PRIVATE_KEY.
+    AllowedPattern: '^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$'
+  GitHubAppSecretsRevision:
+    Type: String
+    Default: '1'
+    MinLength: 1
+    Description: >
+      Change this non-secret value after rotating the external secret to publish
+      a fresh Lambda version and SnapStart snapshot.
 
 Globals:
   Function:
@@ -34,7 +35,12 @@ Resources:
       Architectures:
         - x86_64
       CodeUri: target/function.zip
-      Policies: AWSLambdaBasicExecutionRole
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref GitHubAppSecretArn
       SnapStart:
         ApplyOn: PublishedVersions
       AutoPublishAlias: live
@@ -44,9 +50,8 @@ Resources:
             --add-opens=java.base/java.lang=ALL-UNNAMED
             --add-opens=java.base/java.nio=ALL-UNNAMED
             --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED
-          QUARKUS_GITHUB_APP_APP_ID: !Ref GitHubAppId
-          QUARKUS_GITHUB_APP_WEBHOOK_SECRET: !Ref GitHubAppWebhookSecret
-          QUARKUS_GITHUB_APP_PRIVATE_KEY: !Ref GitHubAppPrivateKey
+          GITHUB_APP_SECRET_ARN: !Ref GitHubAppSecretArn
+          GITHUB_APP_SECRETS_REVISION: !Ref GitHubAppSecretsRevision
       Events:
         Webhook:
           Type: HttpApi
